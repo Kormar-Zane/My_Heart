@@ -9,6 +9,20 @@ export default defineConfig({
   server: {
     port: 5178,
     host: '0.0.0.0',
+    proxy: {
+      '/api': {
+        target: 'http://127.0.0.1:8787',
+        changeOrigin: false,
+      },
+      '/ws': {
+        target: 'ws://127.0.0.1:8787',
+        ws: true,
+      },
+      '/admin': {
+        target: 'http://127.0.0.1:8787',
+        changeOrigin: false,
+      },
+    },
   },
   preview: {
     port: 4178,

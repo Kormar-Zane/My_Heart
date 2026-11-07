@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ArrowRight, BadgeCheck, Eye, EyeOff, LockKeyhole, Phone, Sparkles, UserRound } from 'lucide-react'
+import { ArrowRight, BadgeCheck, Eye, EyeOff, LockKeyhole, Phone, UserRound } from 'lucide-react'
 import { useStore } from '../store'
 import { BrandMark } from '../components/BrandMark'
 import { Button } from '../components/UI'
@@ -8,7 +8,7 @@ import { cn } from '../utils'
 type Mode = 'login' | 'register'
 
 export function AuthScreen({ onOpenCounselor }: { onOpenCounselor?: () => void }) {
-  const { login, register, loginDemo, showToast } = useStore()
+  const { login, register, serverMode, serverChecked } = useStore()
   const [mode, setMode] = useState<Mode>('login')
   const [showPassword, setShowPassword] = useState(false)
   const [account, setAccount] = useState('')
@@ -25,62 +25,48 @@ export function AuthScreen({ onOpenCounselor }: { onOpenCounselor?: () => void }
     setShowPassword(false)
   }
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     setError('')
+    if (!serverChecked) {
+      setError('正在连接服务，请稍候')
+      return
+    }
     setSubmitting(true)
-    window.setTimeout(() => {
+    try {
       if (mode === 'login') {
         if (!account.trim()) {
-          setError('请输入手机号或昵称')
-          setSubmitting(false)
+          setError('请输入手机号')
           return
         }
         if (!password) {
           setError('请输入密码')
-          setSubmitting(false)
           return
         }
-        const result = login(account, password)
-        if (!result.ok) {
-          setError(result.message ?? '登录失败')
-          setSubmitting(false)
-        }
+        const result = await login(account, password)
+        if (!result.ok) setError(result.message ?? '登录失败')
       } else {
         if (!nickname.trim()) {
           setError('给自己起一个昵称吧')
-          setSubmitting(false)
           return
         }
         if (!/^1\d{10}$/.test(phone)) {
           setError('请输入 11 位手机号')
-          setSubmitting(false)
           return
         }
         if (password.length < 6) {
           setError('密码至少需要 6 位')
-          setSubmitting(false)
           return
         }
         if (password !== confirm) {
           setError('两次输入的密码不一致')
-          setSubmitting(false)
           return
         }
-        const result = register({ phone, password, nickname })
-        if (!result.ok) {
-          setError(result.message ?? '注册失败')
-          setSubmitting(false)
-        }
+        const result = await register({ phone, password, nickname })
+        if (!result.ok) setError(result.message ?? '注册失败')
       }
-    }, 360)
-  }
-
-  const fillDemo = () => {
-    setMode('login')
-    setAccount('13800000000')
-    setPassword('123456')
-    setError('')
-    showToast('已填入体验账号，直接登录即可', 'info')
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   return (
@@ -95,7 +81,7 @@ export function AuthScreen({ onOpenCounselor }: { onOpenCounselor?: () => void }
               <span>GUANXIN</span>
             </div>
           </div>
-          <span className="auth-beta">内测 · 用户端</span>
+          <span className="auth-beta">{serverMode ? '真实服务 · 已连接' : serverChecked ? '本地模式' : '连接中…'}</span>
         </header>
 
         <section className="auth-hero">
@@ -194,16 +180,17 @@ export function AuthScreen({ onOpenCounselor }: { onOpenCounselor?: () => void }
               </>
             ) : (
               <label className="field">
-                <span className="field-label">账号</span>
+                <span className="field-label">手机号</span>
                 <div className="field-control">
                   <Phone size={18} />
                   <input
                     value={account}
                     onChange={(e) => {
-                      setAccount(e.target.value)
+                      setAccount(e.target.value.replace(/\D/g, '').slice(0, 11))
                       setError('')
                     }}
-                    placeholder="手机号或昵称"
+                    placeholder="注册时使用的手机号"
+                    inputMode="numeric"
                     autoComplete="username"
                   />
                 </div>
@@ -260,7 +247,7 @@ export function AuthScreen({ onOpenCounselor }: { onOpenCounselor?: () => void }
               </p>
             )}
 
-            <Button type="submit" size="lg" full disabled={submitting} className="auth-submit">
+            <Button type="submit" size="lg" full disabled={submitting || !serverChecked} className="auth-submit">
               {submitting ? (
                 <span className="btn-loading">
                   <span />
@@ -274,18 +261,6 @@ export function AuthScreen({ onOpenCounselor }: { onOpenCounselor?: () => void }
               )}
             </Button>
           </form>
-
-          <div className="auth-divider">
-            <span>或</span>
-          </div>
-
-          <button className="auth-demo" onClick={loginDemo}>
-            <Sparkles size={17} />
-            一键体验 · 使用示例账号
-          </button>
-          <button className="auth-demo-hint" onClick={fillDemo}>
-            体验账号 13800000000 / 密码 123456
-          </button>
 
           {onOpenCounselor && (
             <button className="auth-role-switch" onClick={onOpenCounselor}>
@@ -301,7 +276,7 @@ export function AuthScreen({ onOpenCounselor }: { onOpenCounselor?: () => void }
           )}
 
           <p className="auth-legal">
-            继续即表示你同意《用户协议》与《隐私说明》。测试阶段账号与内容仅保存在本机。
+            继续即表示你同意《用户协议》与《隐私说明》。{serverMode ? '账号密码由服务端加密存储，内容会同步到已连接的数据库。' : '当前为本地模式，账号与内容仅保存在本机。'}
           </p>
           <p className="auth-care">观心提供心理支持与陪伴，不替代医疗诊断与治疗。</p>
         </section>

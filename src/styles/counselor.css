@@ -1270,6 +1270,11 @@
   color: #4d7159 !important;
 }
 
+.ca-status-pill.is-rejected {
+  background: #f6e6e1;
+  color: #a3624f !important;
+}
+
 .ca-pending-timeline {
   position: relative;
   z-index: 2;
@@ -1433,6 +1438,19 @@
   margin-top: 7px;
   padding: 8px;
   color: #92988f;
+  font-size: 8px;
+  text-align: center;
+}
+
+.ca-pending-demo {
+  display: block;
+  width: 100%;
+  margin-top: 7px;
+  padding: 9px;
+  border-radius: 11px;
+  border: 1px dashed #d9c7a5;
+  background: #faf3e4;
+  color: #94713b;
   font-size: 8px;
   text-align: center;
 }

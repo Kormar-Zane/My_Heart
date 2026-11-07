@@ -57,8 +57,8 @@ export function VipScreen() {
 
   const pay = () => {
     setPaying(true)
-    timer.current = window.setTimeout(() => {
-      const result = purchaseVip(selected)
+    timer.current = window.setTimeout(async () => {
+      const result = await purchaseVip(selected)
       setPaying(false)
       setPayOpen(false)
       if (result.ok) setSuccessOpen(true)

@@ -27,6 +27,7 @@ export function CounselorChatScreen({ id }: { id: string }) {
     sendCounselorChatMessage,
     receiveCounselorClientMessage,
     markCounselorChatRead,
+    serverMode,
   } = useStore()
   const nav = useCounselorNav()
   const chat = state.counselorChats.find((item) => item.id === id)
@@ -54,14 +55,16 @@ export function CounselorChatScreen({ id }: { id: string }) {
     if (!text.trim()) return
     sendCounselorChatMessage(chat.id, text)
     setText('')
-    const reply = clientReplies[replyIndex.current % clientReplies.length]
-    replyIndex.current += 1
-    const typingTimer = window.setTimeout(() => setTyping(true), 650)
-    const replyTimer = window.setTimeout(() => {
-      setTyping(false)
-      receiveCounselorClientMessage(chat.id, reply)
-    }, 1900)
-    timers.current.push(typingTimer, replyTimer)
+    if (!serverMode) {
+      const reply = clientReplies[replyIndex.current % clientReplies.length]
+      replyIndex.current += 1
+      const typingTimer = window.setTimeout(() => setTyping(true), 650)
+      const replyTimer = window.setTimeout(() => {
+        setTyping(false)
+        receiveCounselorClientMessage(chat.id, reply)
+      }, 1900)
+      timers.current.push(typingTimer, replyTimer)
+    }
   }
 
   const quickReplies = ['我听到你的感受了', '我们可以慢慢来', '你愿意多说一点吗？', '下次咨询可以继续聊']

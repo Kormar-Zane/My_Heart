@@ -72,7 +72,7 @@ export function CertificateImage({
   src?: string
   className?: string
 }) {
-  if (src?.startsWith('data:')) {
+  if (src?.startsWith('data:') || src?.startsWith('/api/') || src?.startsWith('http')) {
     return <img className={cn('ca-cert-image', className)} src={src} alt="咨询师资质证件" />
   }
   return (

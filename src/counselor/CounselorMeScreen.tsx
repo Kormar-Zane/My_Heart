@@ -254,7 +254,7 @@ export function CounselorMeScreen({ onPublish, onExit }: { onPublish: () => void
               <ChevronRight size={15} />
             </button>
           </div>
-          <p className="ca-me-account-note">查询与咨询记录保存在本机演示环境中。</p>
+          <p className="ca-me-account-note">真实模式下，认证资料、预约与咨询记录保存在服务端数据库。</p>
         </section>
 
         <div className="ca-me-footer">

@@ -55,7 +55,7 @@ export function BookingScreen({ counselorId }: { counselorId: string }) {
   const finalPrice = useVoucher && format === 'inperson' && hasVoucher ? 0 : discounted
   const saving = counselor.price - finalPrice
 
-  const confirm = () => {
+  const confirm = async () => {
     if (!time) {
       setError('请选择一个你方便的时间')
       return
@@ -64,7 +64,7 @@ export function BookingScreen({ counselorId }: { counselorId: string }) {
       setError('年卡面对面权益仅适用于面对面咨询')
       return
     }
-    const result = createBooking({
+    const result = await createBooking({
       counselorId: counselor.id,
       counselorName: counselor.name,
       counselorAvatar: counselor.avatar,

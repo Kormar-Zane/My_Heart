@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type {
   AppState,
   Booking,
@@ -26,6 +26,7 @@ import {
   DEMO_USER_ID,
 } from './data'
 import { isVipActive, uid } from './utils'
+import { checkServer, getWebSocketUrl, serverApi } from './api'
 
 const STORAGE_KEY = 'guanxin_app_state_v4'
 const LEGACY_STORAGE_KEY = 'guanxin_app_state_v3'
@@ -79,17 +80,20 @@ interface StoreValue {
   currentUser: User | null
   currentCounselorAccount: CounselorAccount | null
   currentCounselorProfile: Counselor | null
+  serverMode: boolean
+  serverChecked: boolean
+  syncFromServer: () => Promise<void>
   toast: ToastItem | null
   showToast: (message: string, kind?: ToastKind) => void
   dismissToast: () => void
-  login: (account: string, password: string) => ActionResult
+  login: (account: string, password: string) => Promise<ActionResult>
   loginDemo: () => void
-  register: (data: { phone: string; password: string; nickname: string }) => ActionResult
+  register: (data: { phone: string; password: string; nickname: string }) => Promise<ActionResult>
   logout: () => void
   finishOnboarding: (data: { age: number; gender: User['gender']; region: Region }) => void
   updateProfile: (patch: Partial<Pick<User, 'nickname' | 'age' | 'gender' | 'region' | 'bio' | 'avatar'>>) => void
   followCounselor: (id: string) => void
-  purchaseVip: (tier: Exclude<VipTier, 'none'>) => ActionResult
+  purchaseVip: (tier: Exclude<VipTier, 'none'>) => Promise<ActionResult>
   redeemItem: (itemId: string, price: number, name: string, type: 'virtual' | 'physical', vipOnly?: boolean) => ActionResult
   equipFrame: (frameId: string) => void
   equipBadge: (badgeId: string | null) => void
@@ -102,7 +106,7 @@ interface StoreValue {
   sendMessage: (conversationId: string, content: string) => void
   receiveMessage: (conversationId: string, content: string) => void
   markConversationRead: (id: string) => void
-  createBooking: (booking: Omit<Booking, 'id' | 'createdAt' | 'status'>) => ActionResult
+  createBooking: (booking: Omit<Booking, 'id' | 'createdAt' | 'status'>) => Promise<ActionResult>
   cancelBooking: (id: string) => void
   requestMic: () => ActionResult
   addLiveChat: (liveId: string, content: string) => void
@@ -110,9 +114,9 @@ interface StoreValue {
   createRoom: (data: { title: string; topic: string; tag: string }) => string
   sendRoomMessage: (roomId: string, content: string) => void
   receiveRoomMessage: (roomId: string, content: string) => void
-  loginCounselor: (account: string, password: string) => ActionResult
+  loginCounselor: (account: string, password: string) => Promise<ActionResult>
   loginDemoCounselor: (id?: string) => void
-  registerCounselor: (data: CounselorApplicationInput) => ActionResult
+  registerCounselor: (data: CounselorApplicationInput) => Promise<ActionResult>
   approveCounselorDemo: () => ActionResult
   logoutCounselor: () => void
   createCounselorPost: (content: string, images: string[]) => void
@@ -161,6 +165,46 @@ function loadState(): AppState {
 export function StoreProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<AppState>(loadState)
   const [toast, setToast] = useState<ToastItem | null>(null)
+  const [serverMode, setServerMode] = useState(false)
+  const [serverChecked, setServerChecked] = useState(false)
+
+  const applyServerState = useCallback((data: AppState) => {
+    setState((prev) => ({
+      ...prev,
+      ...data,
+      rooms: data.rooms.length > 0 ? data.rooms : prev.rooms,
+      gameRecords: prev.gameRecords,
+      redemptions: prev.redemptions,
+    }))
+  }, [])
+
+  const syncFromServer = useCallback(async () => {
+    const data = await serverApi.bootstrap()
+    applyServerState(data)
+  }, [applyServerState])
+
+  useEffect(() => {
+    let cancelled = false
+    checkServer()
+      .then(async () => {
+        if (cancelled) return null
+        setServerMode(true)
+        return serverApi.bootstrap()
+      })
+      .then((data) => {
+        if (cancelled || !data) return
+        applyServerState(data)
+      })
+      .catch(() => {
+        if (!cancelled) setServerMode(false)
+      })
+      .finally(() => {
+        if (!cancelled) setServerChecked(true)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [applyServerState])
 
   useEffect(() => {
     try {
@@ -192,6 +236,67 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [state.counselors, currentCounselorAccount?.counselorId],
   )
 
+  useEffect(() => {
+    if (!serverMode || (!state.currentUserId && !state.currentCounselorId)) return
+    let socket: WebSocket | null = null
+    try {
+      socket = new WebSocket(getWebSocketUrl())
+    } catch {
+      return
+    }
+    socket.onmessage = (event) => {
+      let payload: Record<string, any>
+      try {
+        payload = JSON.parse(event.data)
+      } catch {
+        return
+      }
+      if (payload.type === 'message:new') {
+        setState((prev) => {
+          if (prev.currentUserId && payload.userConversation) {
+            const conversation = payload.userConversation
+            const exists = prev.conversations.some((c) => c.id === conversation.id)
+            return {
+              ...prev,
+              conversations: exists
+                ? prev.conversations.map((c) => (c.id === conversation.id ? conversation : c))
+                : [conversation, ...prev.conversations],
+            }
+          }
+          if (prev.currentCounselorId && payload.counselorChat) {
+            const chat = payload.counselorChat
+            const exists = prev.counselorChats.some((c) => c.id === chat.id)
+            return {
+              ...prev,
+              counselorChats: exists
+                ? prev.counselorChats.map((c) => (c.id === chat.id ? chat : c))
+                : [chat, ...prev.counselorChats],
+            }
+          }
+          return prev
+        })
+      }
+      if (payload.type === 'post:new' && payload.post) {
+        setState((prev) => {
+          if (prev.posts.some((p) => p.id === payload.post.id)) return prev
+          return { ...prev, posts: [payload.post, ...prev.posts] }
+        })
+      }
+      if (payload.type === 'post:delete' && payload.id) {
+        setState((prev) => ({ ...prev, posts: prev.posts.filter((p) => p.id !== payload.id) }))
+      }
+      if (payload.type === 'booking:new' && payload.booking && state.currentCounselorId) {
+        setState((prev) => {
+          if (prev.bookings.some((b) => b.id === payload.booking.id)) return prev
+          return { ...prev, bookings: [payload.booking, ...prev.bookings] }
+        })
+      }
+    }
+    return () => {
+      socket?.close()
+    }
+  }, [serverMode, state.currentUserId, state.currentCounselorId])
+
   const showToast = useCallback((message: string, kind: ToastKind = 'success') => {
     setToast({ id: uid('toast'), message, kind })
   }, [])
@@ -212,7 +317,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   )
 
   const login = useCallback(
-    (account: string, password: string): ActionResult => {
+    async (account: string, password: string): Promise<ActionResult> => {
+      if (serverMode) {
+        try {
+          await serverApi.login(account.trim(), password)
+          await syncFromServer()
+          return { ok: true }
+        } catch (error) {
+          return { ok: false, message: error instanceof Error ? error.message : '登录失败' }
+        }
+      }
       const key = account.trim()
       const user = state.users.find((u) => u.phone === key || u.nickname === key)
       if (!user) return { ok: false, message: '没有找到这个账号，试试手机号或昵称' }
@@ -220,42 +334,66 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setState((prev) => ({ ...prev, currentUserId: user.id }))
       return { ok: true }
     },
-    [state.users],
+    [serverMode, state.users, syncFromServer],
   )
 
   const loginDemo = useCallback(() => {
+    if (serverMode) {
+      showToast('真实服务模式已关闭示例账号，请注册或登录真实账号', 'info')
+      return
+    }
     setState((prev) => ({ ...prev, currentUserId: DEMO_USER_ID }))
-  }, [])
+  }, [serverMode, showToast])
 
   const register = useCallback(
-    ({ phone, password, nickname }: { phone: string; password: string; nickname: string }): ActionResult => {
+    async ({ phone, password, nickname }: { phone: string; password: string; nickname: string }): Promise<ActionResult> => {
       if (!/^1\d{10}$/.test(phone)) return { ok: false, message: '请输入 11 位手机号' }
       if (password.length < 6) return { ok: false, message: '密码至少需要 6 位' }
       if (!nickname.trim()) return { ok: false, message: '给自己起一个昵称吧' }
+      if (serverMode) {
+        try {
+          await serverApi.register(phone, password, nickname.trim())
+          await syncFromServer()
+          return { ok: true }
+        } catch (error) {
+          return { ok: false, message: error instanceof Error ? error.message : '注册失败' }
+        }
+      }
       if (state.users.some((u) => u.phone === phone)) return { ok: false, message: '这个手机号已经注册过啦' }
       const user = buildFreshUser({ phone, password, nickname: nickname.trim() })
       setState((prev) => ({ ...prev, users: [...prev.users, user], currentUserId: user.id }))
       return { ok: true }
     },
-    [state.users],
+    [serverMode, state.users, syncFromServer],
   )
 
   const logout = useCallback(() => {
-    setState((prev) => ({ ...prev, currentUserId: null }))
-  }, [])
+    if (serverMode) {
+      void serverApi.logout().finally(() => {
+        void syncFromServer()
+      })
+    }
+    setState((prev) => ({ ...prev, currentUserId: null, currentCounselorId: null }))
+  }, [serverMode, syncFromServer])
 
   const finishOnboarding = useCallback(
     ({ age, gender, region }: { age: number; gender: User['gender']; region: Region }) => {
       patchCurrentUser((u) => ({ ...u, age, gender, region, onboarded: true }))
+      if (serverMode) {
+        void serverApi.updateMe({ age, gender, region, onboarded: true })
+      }
       showToast('欢迎来到观心，这里会慢慢懂你')
     },
-    [patchCurrentUser, showToast],
+    [patchCurrentUser, serverMode, showToast],
   )
 
   const updateProfile = useCallback(
     (patch: Partial<Pick<User, 'nickname' | 'age' | 'gender' | 'region' | 'bio' | 'avatar'>>) => {
       const previous = currentUser
       patchCurrentUser((u) => ({ ...u, ...patch }))
+      if (serverMode) {
+        void serverApi.updateMe(patch)
+      }
       if (previous && (patch.nickname !== undefined || patch.avatar !== undefined)) {
         const nextName = patch.nickname ?? previous.nickname
         const nextAvatar = patch.avatar ?? previous.avatar
@@ -274,7 +412,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       }
       showToast('资料已更新')
     },
-    [currentUser, patchCurrentUser, showToast],
+    [currentUser, patchCurrentUser, serverMode, showToast],
   )
 
   const followCounselor = useCallback(
@@ -287,14 +425,30 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           ? u.followingCounselorIds.filter((x) => x !== id)
           : [...u.followingCounselorIds, id],
       }))
+      if (serverMode) {
+        void serverApi.follow(id)
+      }
       showToast(following ? '已取消关注' : '已关注这位咨询师', following ? 'info' : 'success')
     },
-    [currentUser, patchCurrentUser, showToast],
+    [currentUser, patchCurrentUser, serverMode, showToast],
   )
 
   const purchaseVip = useCallback(
-    (tier: Exclude<VipTier, 'none'>): ActionResult => {
+    async (tier: Exclude<VipTier, 'none'>): Promise<ActionResult> => {
       if (!currentUser) return { ok: false, message: '请先登录' }
+      if (serverMode) {
+        try {
+          const { user } = await serverApi.purchaseVip(tier)
+          setState((prev) => ({
+            ...prev,
+            users: prev.users.map((u) => (u.id === user.id ? user : u)),
+          }))
+          showToast(tier === 'year' ? '年卡开通成功，面对面权益已到账' : '会员开通成功，专属装扮已解锁')
+          return { ok: true }
+        } catch (error) {
+          return { ok: false, message: error instanceof Error ? error.message : '开通失败' }
+        }
+      }
       const days = tier === 'week' ? 7 : tier === 'month' ? 30 : 365
       const active = isVipActive(currentUser)
       const base = active && currentUser?.vipExpiresAt ? new Date(currentUser.vipExpiresAt).getTime() : Date.now()
@@ -310,7 +464,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       showToast(tier === 'year' ? '年卡开通成功，面对面权益已到账' : '会员开通成功，专属装扮已解锁')
       return { ok: true }
     },
-    [currentUser, patchCurrentUser, showToast],
+    [currentUser, patchCurrentUser, serverMode, showToast],
   )
 
   const redeemItem = useCallback(
@@ -402,16 +556,33 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         comments: [],
       }
       setState((prev) => ({ ...prev, posts: [post, ...prev.posts] }))
+      if (serverMode) {
+        void serverApi
+          .createPost({ ...input, id: post.id })
+          .then(({ post: saved }) => {
+            setState((prev) => ({ ...prev, posts: prev.posts.map((p) => (p.id === post.id ? saved : p)) }))
+          })
+          .catch((error) => {
+            setState((prev) => ({ ...prev, posts: prev.posts.filter((p) => p.id !== post.id) }))
+            showToast(error instanceof Error ? error.message : '发布失败', 'error')
+          })
+      }
     },
-    [currentUser],
+    [currentUser, serverMode, showToast],
   )
 
   const deletePost = useCallback(
     (id: string) => {
       setState((prev) => ({ ...prev, posts: prev.posts.filter((p) => p.id !== id) }))
+      if (serverMode) {
+        void serverApi.deletePost(id).catch((error) => {
+          showToast(error instanceof Error ? error.message : '删除失败', 'error')
+          void syncFromServer()
+        })
+      }
       showToast('已删除这条日常', 'info')
     },
-    [showToast],
+    [serverMode, showToast, syncFromServer],
   )
 
   const toggleLike = useCallback(
@@ -429,8 +600,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           }
         }),
       }))
+      if (serverMode) {
+        void serverApi.likePost(id).catch(() => {
+          // The next bootstrap will reconcile likes if the request failed.
+        })
+      }
     },
-    [currentUser],
+    [currentUser, serverMode],
   )
 
   const addComment = useCallback(
@@ -447,8 +623,31 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         ...prev,
         posts: prev.posts.map((p) => (p.id === postId ? { ...p, comments: [...p.comments, comment] } : p)),
       }))
+      if (serverMode) {
+        void serverApi
+          .commentPost(postId, comment.content)
+          .then(({ comment: saved }) => {
+            setState((prev) => ({
+              ...prev,
+              posts: prev.posts.map((p) =>
+                p.id === postId
+                  ? { ...p, comments: p.comments.map((c) => (c.id === comment.id ? saved : c)) }
+                  : p,
+              ),
+            }))
+          })
+          .catch((error) => {
+            setState((prev) => ({
+              ...prev,
+              posts: prev.posts.map((p) =>
+                p.id === postId ? { ...p, comments: p.comments.filter((c) => c.id !== comment.id) } : p,
+              ),
+            }))
+            showToast(error instanceof Error ? error.message : '评论失败', 'error')
+          })
+      }
     },
-    [currentUser],
+    [currentUser, serverMode, showToast],
   )
 
   const ensureCounselorConversation = useCallback(
@@ -468,19 +667,26 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         unread: 0,
         online: counselor.online,
         updatedAt: new Date().toISOString(),
-        messages: [
-          {
-            id: uid('m'),
-            sender: 'system',
-            content: `你已开始与 ${counselor.name} 的对话。可以在这里简单说说你的困扰，或直接预约咨询。`,
-            createdAt: new Date().toISOString(),
-          },
-        ],
+        messages: serverMode
+          ? []
+          : [
+              {
+                id: uid('m'),
+                sender: 'system',
+                content: `你已开始与 ${counselor.name} 的对话。可以在这里简单说说你的困扰，或直接预约咨询。`,
+                createdAt: new Date().toISOString(),
+              },
+            ],
       }
       setState((prev) => ({ ...prev, conversations: [conversation, ...prev.conversations] }))
+      if (serverMode) {
+        void serverApi.createConversation(id, counselor.id).catch(() => {
+          showToast('会话创建失败，请检查服务器连接', 'error')
+        })
+      }
       return id
     },
-    [state.conversations],
+    [serverMode, showToast, state.conversations],
   )
 
   const ensureUserConversation = useCallback(
@@ -527,6 +733,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         content: content.trim(),
         createdAt: new Date().toISOString(),
       }
+      const conversation = state.conversations.find((c) => c.id === conversationId)
       setState((prev) => ({
         ...prev,
         conversations: prev.conversations.map((c) =>
@@ -535,8 +742,15 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             : c,
         ),
       }))
+      if (serverMode && conversation?.participantType === 'counselor') {
+        void serverApi
+          .sendMessage(conversationId, message.content, message.id, conversation.participantId)
+          .catch((error) => {
+            showToast(error instanceof Error ? error.message : '消息发送失败', 'error')
+          })
+      }
     },
-    [],
+    [serverMode, showToast, state.conversations],
   )
 
   const receiveMessage = useCallback((conversationId: string, content: string) => {
@@ -556,16 +770,42 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }))
   }, [])
 
-  const markConversationRead = useCallback((id: string) => {
-    setState((prev) => ({
-      ...prev,
-      conversations: prev.conversations.map((c) => (c.id === id ? { ...c, unread: 0 } : c)),
-    }))
-  }, [])
+  const markConversationRead = useCallback(
+    (id: string) => {
+      setState((prev) => ({
+        ...prev,
+        conversations: prev.conversations.map((c) => (c.id === id ? { ...c, unread: 0 } : c)),
+      }))
+      if (serverMode) {
+        void serverApi.markConversationRead(id).catch(() => {
+          // Read receipts are best-effort; the next bootstrap reconciles them.
+        })
+      }
+    },
+    [serverMode],
+  )
 
   const createBooking = useCallback(
-    (booking: Omit<Booking, 'id' | 'createdAt' | 'status'>): ActionResult => {
+    async (booking: Omit<Booking, 'id' | 'createdAt' | 'status'>): Promise<ActionResult> => {
       if (!currentUser) return { ok: false, message: '请先登录' }
+      if (serverMode) {
+        try {
+          const { booking: saved } = await serverApi.createBooking({
+            counselorId: booking.counselorId,
+            date: booking.date,
+            time: booking.time,
+            format: booking.format,
+            usedVoucher: booking.usedVoucher,
+          })
+          setState((prev) => ({ ...prev, bookings: [saved, ...prev.bookings] }))
+          if (saved.usedVoucher) {
+            patchCurrentUser((u) => ({ ...u, faceToFaceVoucher: Math.max(0, u.faceToFaceVoucher - 1) }))
+          }
+          return { ok: true }
+        } catch (error) {
+          return { ok: false, message: error instanceof Error ? error.message : '预约失败' }
+        }
+      }
       const newBooking: Booking = {
         ...booking,
         id: uid('booking'),
@@ -580,7 +820,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       }
       return { ok: true }
     },
-    [currentUser, patchCurrentUser],
+    [currentUser, patchCurrentUser, serverMode],
   )
 
   const cancelBooking = useCallback(
@@ -589,9 +829,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         ...prev,
         bookings: prev.bookings.map((b) => (b.id === id ? { ...b, status: 'cancelled' } : b)),
       }))
+      if (serverMode) {
+        void serverApi.cancelBooking(id).catch((error) => {
+          showToast(error instanceof Error ? error.message : '取消失败', 'error')
+        })
+      }
       showToast('预约已取消', 'info')
     },
-    [showToast],
+    [serverMode, showToast],
   )
 
   const requestMic = useCallback((): ActionResult => {
@@ -716,7 +961,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const loginCounselor = useCallback(
-    (account: string, password: string): ActionResult => {
+    async (account: string, password: string): Promise<ActionResult> => {
+      if (serverMode) {
+        try {
+          await serverApi.counselorLogin(account.trim(), password)
+          await syncFromServer()
+          return { ok: true }
+        } catch (error) {
+          return { ok: false, message: error instanceof Error ? error.message : '登录失败' }
+        }
+      }
       const key = account.trim()
       const found = state.counselorAccounts.find((c) => c.phone === key || c.name === key)
       if (!found) return { ok: false, message: '没有找到这个咨询师账号' }
@@ -724,27 +978,44 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       setState((prev) => ({ ...prev, currentCounselorId: found.id }))
       return { ok: true }
     },
-    [state.counselorAccounts],
+    [serverMode, state.counselorAccounts, syncFromServer],
   )
 
-  const loginDemoCounselor = useCallback((id = DEMO_COUNSELOR_ACCOUNT_ID) => {
-    setState((prev) => ({ ...prev, currentCounselorId: id }))
-  }, [])
+  const loginDemoCounselor = useCallback(
+    (id = DEMO_COUNSELOR_ACCOUNT_ID) => {
+      if (serverMode) {
+        showToast('真实服务模式已关闭示例账号，请提交认证或使用真实咨询师账号', 'info')
+        return
+      }
+      setState((prev) => ({ ...prev, currentCounselorId: id }))
+    },
+    [serverMode, showToast],
+  )
 
   const registerCounselor = useCallback(
-    (data: CounselorApplicationInput): ActionResult => {
+    async (data: CounselorApplicationInput): Promise<ActionResult> => {
       if (!data.name.trim()) return { ok: false, message: '请填写真实姓名' }
       if (!/^1\d{10}$/.test(data.phone)) return { ok: false, message: '请输入 11 位手机号' }
       if (data.password.length < 6) return { ok: false, message: '密码至少需要 6 位' }
-      if (state.counselorAccounts.some((c) => c.phone === data.phone)) {
-        return { ok: false, message: '这个手机号已经提交过咨询师账号' }
-      }
       if (!data.certificateType.trim()) return { ok: false, message: '请选择证件类型' }
       if (!data.licenseNumber.trim()) return { ok: false, message: '请填写证件编号' }
       if (!data.issuingAuthority.trim()) return { ok: false, message: '请填写发证机构' }
       if (!data.certificateImage) return { ok: false, message: '请上传咨询师证件照片' }
       if (data.specialties.length === 0) return { ok: false, message: '请至少选择一个擅长方向' }
 
+      if (serverMode) {
+        try {
+          await serverApi.counselorRegister(data)
+          await syncFromServer()
+          return { ok: true }
+        } catch (error) {
+          return { ok: false, message: error instanceof Error ? error.message : '提交失败' }
+        }
+      }
+
+      if (state.counselorAccounts.some((c) => c.phone === data.phone)) {
+        return { ok: false, message: '这个手机号已经提交过咨询师账号' }
+      }
       const accountId = uid('ca')
       const account: CounselorAccount = {
         id: accountId,
@@ -777,10 +1048,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       }))
       return { ok: true }
     },
-    [state.counselorAccounts],
+    [serverMode, state.counselorAccounts, syncFromServer],
   )
 
   const approveCounselorDemo = useCallback((): ActionResult => {
+    if (serverMode) {
+      return { ok: false, message: '真实服务模式由平台管理员审核，不能自助通过' }
+    }
     if (!currentCounselorAccount) return { ok: false, message: '请先登录咨询师账号' }
     if (currentCounselorAccount.status === 'approved') return { ok: true }
     const account = currentCounselorAccount
@@ -830,11 +1104,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }))
     showToast('认证审核已通过，咨询师工作台已解锁')
     return { ok: true }
-  }, [currentCounselorAccount, showToast, state.institutions])
+  }, [currentCounselorAccount, serverMode, showToast, state.institutions])
 
   const logoutCounselor = useCallback(() => {
-    setState((prev) => ({ ...prev, currentCounselorId: null }))
-  }, [])
+    if (serverMode) {
+      void serverApi.counselorLogout().finally(() => {
+        void syncFromServer()
+      })
+    }
+    setState((prev) => ({ ...prev, currentCounselorId: null, currentUserId: null }))
+  }, [serverMode, syncFromServer])
 
   const createCounselorPost = useCallback(
     (content: string, images: string[]) => {
@@ -863,8 +1142,25 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           counselors: prev.counselors.map((c) => (c.id === profile.id ? { ...c, online: true } : c)),
         }))
       }
+      if (serverMode) {
+        void serverApi
+          .createPost({
+            id: post.id,
+            content: post.content,
+            images: post.images,
+            visibility: 'public',
+            visibleTo: [],
+          })
+          .then(({ post: saved }) => {
+            setState((prev) => ({ ...prev, posts: prev.posts.map((p) => (p.id === post.id ? saved : p)) }))
+          })
+          .catch((error) => {
+            setState((prev) => ({ ...prev, posts: prev.posts.filter((p) => p.id !== post.id) }))
+            showToast(error instanceof Error ? error.message : '发布失败', 'error')
+          })
+      }
     },
-    [currentCounselorAccount, state.counselors],
+    [currentCounselorAccount, serverMode, showToast, state.counselors],
   )
 
   const startCounselorLive = useCallback(
@@ -969,29 +1265,32 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const sendCounselorChatMessage = useCallback(
     (chatId: string, content: string) => {
       if (!currentCounselorAccount || !content.trim()) return
+      const message = {
+        id: uid('cm'),
+        sender: 'counselor' as const,
+        content: content.trim(),
+        createdAt: new Date().toISOString(),
+      }
       setState((prev) => ({
         ...prev,
         counselorChats: prev.counselorChats.map((chat) =>
           chat.id === chatId && chat.counselorId === currentCounselorAccount.counselorId
             ? {
                 ...chat,
-                messages: [
-                  ...chat.messages,
-                  {
-                    id: uid('cm'),
-                    sender: 'counselor',
-                    content: content.trim(),
-                    createdAt: new Date().toISOString(),
-                  },
-                ],
-                updatedAt: new Date().toISOString(),
+                messages: [...chat.messages, message],
+                updatedAt: message.createdAt,
                 unread: 0,
               }
             : chat,
         ),
       }))
+      if (serverMode) {
+        void serverApi.sendMessage(chatId, message.content, message.id).catch((error) => {
+          showToast(error instanceof Error ? error.message : '消息发送失败', 'error')
+        })
+      }
     },
-    [currentCounselorAccount],
+    [currentCounselorAccount, serverMode, showToast],
   )
 
   const receiveCounselorClientMessage = useCallback(
@@ -1022,27 +1321,42 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     [currentCounselorAccount],
   )
 
-  const markCounselorChatRead = useCallback((chatId: string) => {
-    setState((prev) => ({
-      ...prev,
-      counselorChats: prev.counselorChats.map((chat) =>
-        chat.id === chatId ? { ...chat, unread: 0 } : chat,
-      ),
-    }))
-  }, [])
+  const markCounselorChatRead = useCallback(
+    (chatId: string) => {
+      setState((prev) => ({
+        ...prev,
+        counselorChats: prev.counselorChats.map((chat) =>
+          chat.id === chatId ? { ...chat, unread: 0 } : chat,
+        ),
+      }))
+      if (serverMode) {
+        void serverApi.markConversationRead(chatId).catch(() => {
+          // best-effort read receipt
+        })
+      }
+    },
+    [serverMode],
+  )
 
   const resetDemo = useCallback(() => {
+    if (serverMode) {
+      showToast('真实服务数据不会在这里清除；请联系管理员或操作数据库', 'info')
+      return
+    }
     localStorage.removeItem(STORAGE_KEY)
     localStorage.removeItem(LEGACY_STORAGE_KEY)
     setState(createInitialState())
     showToast('演示数据已重置', 'info')
-  }, [showToast])
+  }, [serverMode, showToast])
 
   const value: StoreValue = {
     state,
     currentUser,
     currentCounselorAccount,
     currentCounselorProfile,
+    serverMode,
+    serverChecked,
+    syncFromServer,
     toast,
     showToast,
     dismissToast,

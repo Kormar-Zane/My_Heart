@@ -8,5 +8,9 @@ shots/
 
 .env
 .env.*
+!.env.example
 *.log
 .vite/
+server/data/
+server/uploads/*
+!server/uploads/.gitkeep

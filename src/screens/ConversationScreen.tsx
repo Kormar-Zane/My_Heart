@@ -21,7 +21,7 @@ const replies: Record<string, string[]> = {
 }
 
 export function ConversationScreen({ id }: { id: string }) {
-  const { state, currentUser, sendMessage, receiveMessage, markConversationRead, ensureCounselorConversation } = useStore()
+  const { state, currentUser, sendMessage, receiveMessage, markConversationRead, ensureCounselorConversation, serverMode } = useStore()
   const nav = useNav()
   const conversation = state.conversations.find((c) => c.id === id)
   const [text, setText] = useState('')
@@ -48,15 +48,17 @@ export function ConversationScreen({ id }: { id: string }) {
     if (!text.trim()) return
     sendMessage(id, text)
     setText('')
-    const pool = replies[conversation.participantType] ?? replies.system
-    const reply = pool[replyIndex.current % pool.length]
-    replyIndex.current += 1
-    const typingTimer = window.setTimeout(() => setTyping(true), 500)
-    const replyTimer = window.setTimeout(() => {
-      setTyping(false)
-      receiveMessage(id, reply)
-    }, 1700)
-    timers.current.push(typingTimer, replyTimer)
+    if (!serverMode) {
+      const pool = replies[conversation.participantType] ?? replies.system
+      const reply = pool[replyIndex.current % pool.length]
+      replyIndex.current += 1
+      const typingTimer = window.setTimeout(() => setTyping(true), 500)
+      const replyTimer = window.setTimeout(() => {
+        setTyping(false)
+        receiveMessage(id, reply)
+      }, 1700)
+      timers.current.push(typingTimer, replyTimer)
+    }
   }
 
   const quickReplies =

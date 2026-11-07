@@ -29,7 +29,7 @@ const specialtyOptions = ['情绪压力', '亲密关系', '焦虑抑郁', '睡�
 type Mode = 'login' | 'apply'
 
 export function CounselorAuthScreen({ onExit }: { onExit: () => void }) {
-  const { loginCounselor, loginDemoCounselor } = useStore()
+  const { loginCounselor, serverMode, serverChecked } = useStore()
   const [mode, setMode] = useState<Mode>('login')
 
   return (
@@ -85,15 +85,21 @@ export function CounselorAuthScreen({ onExit }: { onExit: () => void }) {
           </div>
 
           {mode === 'login' ? (
-            <CounselorLogin onDemo={() => loginDemoCounselor()} onApply={() => setMode('apply')} login={loginCounselor} />
+            <CounselorLogin
+              onApply={() => setMode('apply')}
+              login={loginCounselor}
+              serverMode={serverMode}
+              serverChecked={serverChecked}
+            />
           ) : (
-            <CounselorApply />
+            <CounselorApply serverMode={serverMode} />
           )}
         </section>
 
         <footer className="ca-auth-footer">
           <ShieldCheck size={13} />
-          咨询师端仅向通过资质认证的专业人士开放。测试阶段认证流程与证件信息仅保存在本机。
+          咨询师端仅向通过资质认证的专业人士开放。
+          {serverMode ? ' 当前证件会加密保存到服务端，由平台管理员人工审核。' : ' 当前为本地模式，证件与审核状态仅保存在本机。'}
         </footer>
       </div>
     </div>
@@ -102,25 +108,38 @@ export function CounselorAuthScreen({ onExit }: { onExit: () => void }) {
 
 function CounselorLogin({
   login,
-  onDemo,
   onApply,
+  serverMode,
+  serverChecked,
 }: {
-  login: (account: string, password: string) => { ok: boolean; message?: string }
-  onDemo: () => void
+  login: (account: string, password: string) => Promise<{ ok: boolean; message?: string }>
   onApply: () => void
+  serverMode: boolean
+  serverChecked: boolean
 }) {
   const [account, setAccount] = useState('')
   const [password, setPassword] = useState('')
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState('')
+  const [submitting, setSubmitting] = useState(false)
 
-  const submit = () => {
+  const submit = async () => {
+    if (!serverChecked) {
+      setError('正在连接服务，请稍候')
+      return
+    }
     if (!account.trim() || !password) {
       setError('请输入咨询师账号和密码')
       return
     }
-    const result = login(account, password)
-    if (!result.ok) setError(result.message ?? '登录失败')
+    setSubmitting(true)
+    setError('')
+    try {
+      const result = await login(account, password)
+      if (!result.ok) setError(result.message ?? '登录失败')
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   return (
@@ -143,7 +162,7 @@ function CounselorLogin({
         }}
       >
         <label className="ca-field">
-          <span>手机号 / 姓名</span>
+          <span>手机号</span>
           <div className="ca-field-control">
             <Phone size={17} />
             <input
@@ -177,21 +196,27 @@ function CounselorLogin({
           </div>
         </label>
         {error && <p className="ca-form-error">{error}</p>}
-        <Button type="submit" full size="lg">
-          进入咨询师工作台
-          <ArrowRight size={16} />
+        <Button type="submit" full size="lg" disabled={submitting || !serverChecked}>
+          {submitting ? (
+            <span className="btn-loading">
+              <span /><span /><span />
+            </span>
+          ) : (
+            <>
+              进入咨询师工作台
+              <ArrowRight size={16} />
+            </>
+          )}
         </Button>
       </form>
 
       <div className="ca-login-divider">
-        <span>或</span>
+        <span>{serverMode ? '真实服务模式' : '本地模式'}</span>
       </div>
 
-      <button className="ca-demo-login" onClick={onDemo}>
-        <Sparkles size={15} />
-        一键体验 · 林知夏咨询师
-      </button>
-      <p className="ca-demo-hint">体验账号 13900000001 / 密码 123456</p>
+      <div className="ca-demo-hint" style={{ marginTop: 0, marginBottom: 9 }}>
+        {serverMode ? '认证申请由平台管理员人工审核，审核通过后解锁工作台。' : '当前未连接后端，审核与账号仅保存在本机。'}
+      </div>
 
       <button className="ca-apply-link" onClick={onApply}>
         还没有咨询师账号？
@@ -207,7 +232,7 @@ function CounselorLogin({
   )
 }
 
-function CounselorApply() {
+function CounselorApply({ serverMode }: { serverMode: boolean }) {
   const { registerCounselor, showToast } = useStore()
   const [step, setStep] = useState(0)
   const [name, setName] = useState('')
@@ -225,6 +250,7 @@ function CounselorApply() {
   const [bio, setBio] = useState('')
   const [certificateImage, setCertificateImage] = useState('')
   const [uploading, setUploading] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
   const [agreed, setAgreed] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
@@ -241,7 +267,7 @@ function CounselorApply() {
     )
   }
 
-  const next = () => {
+  const next = async () => {
     setError('')
     if (step === 0) {
       if (!name.trim()) return setError('请填写真实姓名')
@@ -260,26 +286,32 @@ function CounselorApply() {
     }
     if (!certificateImage) return setError('请上传咨询师证件照片')
     if (!agreed) return setError('请确认资料真实性与职业伦理承诺')
-    const result = registerCounselor({
-      name,
-      phone,
-      password,
-      gender,
-      region,
-      years,
-      institution,
-      specialties,
-      bio,
-      certificateType,
-      licenseNumber,
-      issuingAuthority,
-      certificateImage,
-    })
-    if (!result.ok) {
-      setError(result.message ?? '提交失败')
-      return
+    setSubmitting(true)
+    setError('')
+    try {
+      const result = await registerCounselor({
+        name,
+        phone,
+        password,
+        gender,
+        region,
+        years,
+        institution,
+        specialties,
+        bio,
+        certificateType,
+        licenseNumber,
+        issuingAuthority,
+        certificateImage,
+      })
+      if (!result.ok) {
+        setError(result.message ?? '提交失败')
+        return
+      }
+      showToast('认证资料已提交，等待平台审核')
+    } finally {
+      setSubmitting(false)
     }
-    showToast('认证资料已提交，等待平台审核')
   }
 
   const upload = async (files: FileList | null) => {
@@ -313,7 +345,9 @@ function CounselorApply() {
             ? '我们只展示你的公开姓名和专业信息，手机号不会公开。'
             : step === 1
               ? '这些信息将用于资质审核，以及用户端的咨询师主页展示。'
-              : '请上传清晰、完整的证件照片。测试阶段的图片不会上传到服务器。'}
+              : serverMode
+                ? '请上传清晰、完整的证件照片，提交后会保存到服务端，仅审核人员可见。'
+                : '当前未连接后端，证件照片只会保存在本机。'}
         </p>
       </div>
 
@@ -483,7 +517,9 @@ function CounselorApply() {
           </label>
           <div className="ca-apply-security">
             <ShieldCheck size={15} />
-            测试阶段证件资料仅保存在本机，不会上传服务器；正式版将接入人工审核。
+            {serverMode
+              ? '证件照片会保存到服务端，仅平台审核人员可查看；审核通过后才会对外展示专业资料。'
+              : '当前未连接后端，证件资料仅保存在本机；连接服务后才会启用真实上传与人工审核。'}
           </div>
         </div>
       )}
@@ -499,9 +535,17 @@ function CounselorApply() {
         ) : (
           <span />
         )}
-        <Button type="button" size="lg" onClick={next} className="ca-apply-next">
-          {step === 2 ? '提交审核' : '继续'}
-          <ArrowRight size={16} />
+        <Button type="button" size="lg" onClick={next} className="ca-apply-next" disabled={submitting || uploading}>
+          {submitting ? (
+            <span className="btn-loading">
+              <span /><span /><span />
+            </span>
+          ) : (
+            <>
+              {step === 2 ? '提交审核' : '继续'}
+              <ArrowRight size={16} />
+            </>
+          )}
         </Button>
       </div>
 

@@ -16,7 +16,7 @@ function Toggle({ value, onChange }: { value: boolean; onChange: () => void }) {
 }
 
 export function SettingsScreen() {
-  const { currentUser, logout, resetDemo, showToast } = useStore()
+  const { currentUser, logout, resetDemo, showToast, serverMode, serverChecked } = useStore()
   const nav = useNav()
   const [notifications, setNotifications] = useState({ live: true, booking: true, square: false })
   const [resetOpen, setResetOpen] = useState(false)
@@ -104,6 +104,30 @@ export function SettingsScreen() {
       </section>
 
       <section className="settings-group">
+        <h2>服务连接</h2>
+        <button
+          className="settings-link"
+          onClick={() =>
+            showToast(
+              serverMode
+                ? '已连接真实后端：JWT 会话、SQLite 数据、WebSocket 聊天'
+                : '未连接后端，当前使用本地模式。运行 npm run dev:full 启动真实服务',
+              'info',
+            )
+          }
+        >
+          <span>
+            <ShieldCheck size={17} />
+            数据服务
+          </span>
+          <span className="settings-version">
+            {serverMode ? '真实后端已连接' : serverChecked ? '本地模式' : '连接中…'}
+          </span>
+          <ChevronRight size={15} />
+        </button>
+      </section>
+
+      <section className="settings-group">
         <h2>咨询师</h2>
         <button
           className="settings-link"
@@ -149,7 +173,7 @@ export function SettingsScreen() {
         <button className="settings-link" onClick={() => setResetOpen(true)}>
           <span>
             <RotateCcw size={17} />
-            重置演示数据
+            {serverMode ? '清理本地缓存' : '重置演示数据'}
           </span>
           <ChevronRight size={15} />
         </button>
