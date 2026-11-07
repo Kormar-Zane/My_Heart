@@ -10,6 +10,16 @@ https://kormar-zane.github.io/My_Heart/
 
 代码仓库：https://github.com/Kormar-Zane/My_Heart
 
+## Android 安装包
+
+测试版 APK 通过 GitHub Releases 发布：
+
+https://github.com/Kormar-Zane/My_Heart/releases/latest
+
+- 适用于 Android 7.0 及以上
+- 下载 APK 后，在手机文件管理器中打开，按提示允许“安装未知应用”
+- 当前为测试签名版本，适合内测体验；正式上架应用商店需要单独配置发布签名和隐私合规材料
+
 ## 界面预览
 
 | 首页 | 心理咨询 | 解压空间 |

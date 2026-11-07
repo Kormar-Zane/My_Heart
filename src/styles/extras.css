@@ -3168,7 +3168,7 @@
   align-items: center;
   gap: 9px;
   margin-top: 15px;
-  padding: 10px 17px calc(10px + env(safe-area-inset-bottom));
+  padding: 10px 17px calc(10px + var(--safe-bottom));
   background: rgba(250, 246, 238, 0.95);
   backdrop-filter: blur(18px);
   border-top: 1px solid var(--line);
