@@ -4,6 +4,12 @@
 
 观心是一款面向用户的移动端心理陪伴应用原型，包含心理咨询、AI 心情匹配、免费直播、解压空间、小红花礼物、广场与聊天等完整用户端体验。项目使用 React + TypeScript + Vite 构建，数据和演示人物均保存在浏览器本地，打开即可体验，无需后端或手机验证码。
 
+## 在线体验
+
+https://kormar-zane.github.io/My_Heart/
+
+代码仓库：https://github.com/Kormar-Zane/My_Heart
+
 ## 界面预览
 
 | 首页 | 心理咨询 | 解压空间 |
