@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { AlertTriangle, ChevronRight, LogOut, RotateCcw, ShieldCheck, Smartphone, Sparkles } from 'lucide-react'
+import { AlertTriangle, BadgeCheck, ChevronRight, LogOut, RotateCcw, ShieldCheck, Smartphone, Sparkles } from 'lucide-react'
 import { useStore } from '../store'
 import { useNav } from '../navigation'
 import { Avatar } from '../components/Avatar'
@@ -104,10 +104,27 @@ export function SettingsScreen() {
       </section>
 
       <section className="settings-group">
+        <h2>咨询师</h2>
+        <button
+          className="settings-link"
+          onClick={() => {
+            window.location.hash = 'counselor'
+          }}
+        >
+          <span>
+            <BadgeCheck size={17} />
+            咨询师专用端
+          </span>
+          <span className="settings-version">认证后进入</span>
+          <ChevronRight size={15} />
+        </button>
+      </section>
+
+      <section className="settings-group">
         <h2>关于</h2>
-        <button className="settings-link" onClick={() => showToast('观心用户端 v1.0 · 内测版本', 'info')}>
+        <button className="settings-link" onClick={() => showToast('观心用户端 v1.1 · 内测版本', 'info')}>
           <span>版本信息</span>
-          <span className="settings-version">v1.0.0 内测</span>
+          <span className="settings-version">v1.1.0 内测</span>
         </button>
         <button className="settings-link" onClick={() => showToast('用户协议为演示占位内容', 'info')}>
           <span>用户协议</span>
@@ -123,7 +140,7 @@ export function SettingsScreen() {
         <BrandMark size={38} />
         <div>
           <strong>观心 · 看见情绪，也看见自己</strong>
-          <p>一个温柔的心理陪伴空间。当前为内测用户端，咨询师专用端将在后续版本开放。</p>
+          <p>一个温柔的心理陪伴空间。咨询师专用端已上线，认证咨询师可从设置或登录页进入。</p>
         </div>
       </section>
 

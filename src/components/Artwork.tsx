@@ -545,6 +545,34 @@ export function Artwork({ variant = 'window', className, rounded }: ArtworkProps
         </g>
       )}
 
+      {v === 'certificate' && (
+        <g>
+          <rect width="400" height="300" fill="#E9DFCE" />
+          <rect x="42" y="26" width="316" height="248" rx="6" fill="#FBF5E9" />
+          <rect x="57" y="41" width="286" height="218" rx="3" fill="none" stroke="#C7B28D" strokeWidth="1.5" />
+          <path d="M93 74H285" stroke="#C5B08B" strokeWidth="2" />
+          <path d="M138 63H240" stroke="#8A765C" strokeWidth="3" />
+          <path d="M167 82H211" stroke="#B5A084" strokeWidth="1" />
+          <g stroke="#BBAB93" strokeWidth="2" strokeLinecap="round">
+            <path d="M88 116H277" />
+            <path d="M88 134H248" />
+            <path d="M88 152H263" />
+            <path d="M88 170H210" />
+          </g>
+          <circle cx="283" cy="210" r="31" fill="none" stroke="#C87862" strokeWidth="2.5" opacity="0.8" />
+          <circle cx="283" cy="210" r="24" fill="none" stroke="#C87862" strokeWidth="1" opacity="0.6" />
+          <text x="283" y="215" textAnchor="middle" fill="#B76551" fontSize="16" fontFamily="serif" opacity="0.9">观心</text>
+          <path d="M104 205H156" stroke="#7D8D7B" strokeWidth="2" />
+          <path d="M104 219H144" stroke="#B5A084" strokeWidth="1.2" />
+          <g transform="translate(62 256)">
+            <rect width="64" height="18" rx="9" fill="#24483F" opacity="0.9" />
+            <text x="32" y="12.5" textAnchor="middle" fill="#F7F3EB" fontSize="7" letterSpacing="1">VERIFIED</text>
+          </g>
+          <path d="M322 55L328 68L342 70L332 80L335 94L322 87L309 94L312 80L302 70L316 68Z" fill="#E6BD68" opacity="0.78" />
+          <circle cx="73" cy="67" r="11" fill="#D9CBB5" opacity="0.5" />
+        </g>
+      )}
+
       {v === 'live' && (
         <g>
           <rect width="400" height="300" fill="#253E43" />
@@ -570,7 +598,7 @@ export function Artwork({ variant = 'window', className, rounded }: ArtworkProps
         </g>
       )}
 
-      {!['window','flowers','mountain','forest','garden','sea','desk','dusk','night','sage','peach','spring','star','badge','cup','seed','tote','aroma','draw','turtle','idiom','song','karaoke','live'].includes(v) && (
+      {!['window','flowers','mountain','forest','garden','sea','desk','dusk','night','sage','peach','spring','star','badge','cup','seed','tote','aroma','draw','turtle','idiom','song','karaoke','live','certificate'].includes(v) && (
         <g>
           <rect width="400" height="300" fill={`url(#${sky})`} />
           <circle cx="300" cy="72" r="48" fill="#F2C96D" />

@@ -77,7 +77,7 @@ export function CounselingScreen() {
               <Avatar variant={v} size={48} />
             </span>
           ))}
-          <span className="counseling-face-note">8 位咨询师</span>
+          <span className="counseling-face-note">{state.counselors.length} 位咨询师</span>
         </div>
         <span className="counseling-hero-mark">❋</span>
       </section>

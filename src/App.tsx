@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { Check, MessageCircle, ShieldCheck, Sparkles } from 'lucide-react'
+import { BadgeCheck, Check, MessageCircle, Radio, ShieldCheck, Sparkles } from 'lucide-react'
+import { CounselorApp } from './counselor/CounselorApp'
 import { StoreProvider, useStore } from './store'
 import { NavProvider, useNav } from './navigation'
 import { AuthScreen } from './screens/AuthScreen'
@@ -46,31 +47,52 @@ function ToastHost() {
   )
 }
 
-function DesktopShowcase() {
+function DesktopShowcase({ mode }: { mode: 'user' | 'counselor' }) {
+  const counselor = mode === 'counselor'
   return (
     <aside className="desktop-showcase">
       <div className="desktop-brand">
         <BrandMark size={48} />
         <div>
           <strong>观心</strong>
-          <span>GUANXIN · 心理陪伴空间</span>
+          <span>{counselor ? 'GUANXIN · 咨询师工作空间' : 'GUANXIN · 心理陪伴空间'}</span>
         </div>
       </div>
 
       <div className="desktop-copy">
         <p className="desktop-eyebrow">
           <span />
-          给心一个停靠的地方
+          {counselor ? '给专业一个从容的空间' : '给心一个停靠的地方'}
         </p>
         <h1>
-          看见情绪，
-          <br />
-          <em>也看见自己。</em>
+          {counselor ? (
+            <>
+              让专业被看见，
+              <br />
+              <em>让陪伴更从容。</em>
+            </>
+          ) : (
+            <>
+              看见情绪，
+              <br />
+              <em>也看见自己。</em>
+            </>
+          )}
         </h1>
         <p className="desktop-desc">
-          专业心理咨询、温柔的解压空间、真实的同频连接。
-          <br />
-          不必急着变好，先好好待在此刻。
+          {counselor ? (
+            <>
+              资质认证、免费直播、来访者沟通与专业分享。
+              <br />
+              把更多精力，留给真正重要的陪伴。
+            </>
+          ) : (
+            <>
+              专业心理咨询、温柔的解压空间、真实的同频连接。
+              <br />
+              不必急着变好，先好好待在此刻。
+            </>
+          )}
         </p>
       </div>
 
@@ -80,45 +102,45 @@ function DesktopShowcase() {
             <ShieldCheck size={16} />
           </span>
           <p>
-            <strong>专业咨询师</strong>
-            <small>资质审核 · 地区匹配 · 自由预约</small>
+            <strong>{counselor ? '资质认证' : '专业咨询师'}</strong>
+            <small>{counselor ? '证件核验 · 认证通过后开放工作台' : '资质审核 · 地区匹配 · 自由预约'}</small>
           </p>
         </div>
         <div>
           <span>
-            <MessageCircle size={16} />
+            {counselor ? <Radio size={16} /> : <MessageCircle size={16} />}
           </span>
           <p>
-            <strong>解压与连接</strong>
-            <small>主题房间 · 小游戏 · 小红花礼物</small>
+            <strong>{counselor ? '免费直播' : '解压与连接'}</strong>
+            <small>{counselor ? '分享专业 · 回应问题 · 与来访者相遇' : '主题房间 · 小游戏 · 小红花礼物'}</small>
           </p>
         </div>
         <div>
           <span>
-            <Sparkles size={16} />
+            {counselor ? <BadgeCheck size={16} /> : <Sparkles size={16} />}
           </span>
           <p>
-            <strong>温柔的陪伴</strong>
-            <small>免费直播 · AI 匹配 · 日常分享</small>
+            <strong>{counselor ? '专业分享' : '温柔的陪伴'}</strong>
+            <small>{counselor ? '日常分享 · 来访者沟通 · 工作台' : '免费直播 · AI 匹配 · 日常分享'}</small>
           </p>
         </div>
       </div>
 
       <blockquote className="desktop-quote">
         <span>“</span>
-        你不需要变得完美，才值得被理解。
-        <cite>— 观心 · 林知夏</cite>
+        {counselor ? '先照顾好自己，再去照顾别人。' : '你不需要变得完美，才值得被理解。'}
+        <cite>{counselor ? '— 观心咨询师端' : '— 观心 · 林知夏'}</cite>
       </blockquote>
 
       <footer className="desktop-footer">
-        <span>用户端 · 内测版本 1.0</span>
+        <span>{counselor ? '咨询师端 · 内测版本 1.0' : '用户端 · 内测版本 1.0'}</span>
         <span>© 2026 观心 GUANXIN</span>
       </footer>
     </aside>
   )
 }
 
-function AppStage({ children }: { children: ReactNode }) {
+function AppStage({ children, mode = 'user' }: { children: ReactNode; mode?: 'user' | 'counselor' }) {
   const [time, setTime] = useState(() => new Date())
   useEffect(() => {
     const timer = window.setInterval(() => setTime(new Date()), 60_000)
@@ -127,14 +149,14 @@ function AppStage({ children }: { children: ReactNode }) {
   const clock = `${String(time.getHours()).padStart(2, '0')}:${String(time.getMinutes()).padStart(2, '0')}`
 
   return (
-    <div className="app-stage">
+    <div className={cn('app-stage', mode === 'counselor' && 'is-counselor-stage')}>
       <div className="stage-atmosphere" />
       <div className="stage-watermark">观心</div>
-      <DesktopShowcase />
+      <DesktopShowcase mode={mode} />
       <div className="app-frame">
         <div className="fake-statusbar">
           <span>{clock}</span>
-          <span className="fake-statusbar-title">观心</span>
+          <span className="fake-statusbar-title">{mode === 'counselor' ? '观心 · 咨询师端' : '观心'}</span>
           <span className="fake-statusbar-icons">
             <span className="signal-bars">
               <i />
@@ -150,7 +172,9 @@ function AppStage({ children }: { children: ReactNode }) {
         <div className="app-viewport">{children}</div>
         <ToastHost />
       </div>
-      <p className="stage-caption">在手机浏览器打开，体验更佳 · 所有演示数据仅保存在本机</p>
+      <p className="stage-caption">
+        {mode === 'counselor' ? '咨询师专用端 · 测试认证流程' : '在手机浏览器打开，体验更佳 · 所有演示数据仅保存在本机'}
+      </p>
     </div>
   )
 }
@@ -235,7 +259,7 @@ function ScreenRenderer({ compose, setCompose }: { compose: boolean; setCompose:
   )
 }
 
-function AppInner() {
+function UserApp({ onOpenCounselor }: { onOpenCounselor: () => void }) {
   const { currentUser } = useStore()
   const [compose, setCompose] = useState(false)
 
@@ -244,26 +268,58 @@ function AppInner() {
   }, [currentUser])
 
   if (!currentUser) {
-    return (
-      <AppStage>
-        <AuthScreen />
-      </AppStage>
-    )
+    return <AuthScreen onOpenCounselor={onOpenCounselor} />
   }
 
   if (!currentUser.onboarded) {
-    return (
-      <AppStage>
-        <OnboardingScreen />
-      </AppStage>
-    )
+    return <OnboardingScreen />
   }
 
   return (
-    <AppStage>
-      <NavProvider>
-        <ScreenRenderer compose={compose} setCompose={setCompose} />
-      </NavProvider>
+    <NavProvider>
+      <ScreenRenderer compose={compose} setCompose={setCompose} />
+    </NavProvider>
+  )
+}
+
+type AppMode = 'user' | 'counselor'
+
+function readMode(): AppMode {
+  const hash = window.location.hash.replace(/^#\/?/, '').toLowerCase()
+  const query = new URLSearchParams(window.location.search).get('role')
+  return hash === 'counselor' || query === 'counselor' ? 'counselor' : 'user'
+}
+
+function RoleApp() {
+  const [mode, setMode] = useState<AppMode>(() => readMode())
+
+  useEffect(() => {
+    const onHashChange = () => setMode(readMode())
+    window.addEventListener('hashchange', onHashChange)
+    return () => window.removeEventListener('hashchange', onHashChange)
+  }, [])
+
+  useEffect(() => {
+    document.title =
+      mode === 'counselor' ? '观心 · 咨询师专用端' : '观心 · 看见情绪，也看见自己'
+  }, [mode])
+
+  const openCounselor = () => {
+    window.location.hash = 'counselor'
+    setMode('counselor')
+  }
+
+  const openUser = () => {
+    const url = new URL(window.location.href)
+    url.hash = ''
+    url.searchParams.delete('role')
+    window.history.replaceState(null, '', `${url.pathname}${url.search}`)
+    setMode('user')
+  }
+
+  return (
+    <AppStage mode={mode}>
+      {mode === 'counselor' ? <CounselorApp onExit={openUser} /> : <UserApp onOpenCounselor={openCounselor} />}
     </AppStage>
   )
 }
@@ -271,7 +327,7 @@ function AppInner() {
 export default function App() {
   return (
     <StoreProvider>
-      <AppInner />
+      <RoleApp />
     </StoreProvider>
   )
 }

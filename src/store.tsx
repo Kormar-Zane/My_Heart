@@ -6,6 +6,9 @@ import type {
   Comment,
   Conversation,
   Counselor,
+  CounselorAccount,
+  CounselorChat,
+  CounselorCredential,
   GameType,
   Post,
   Region,
@@ -14,10 +17,18 @@ import type {
   VipTier,
   Visibility,
 } from './types'
-import { buildFreshUser, createInitialState, DEMO_USER_ID } from './data'
+import {
+  buildFreshUser,
+  COUNSELOR_ACCOUNTS,
+  COUNSELOR_CHATS,
+  createInitialState,
+  DEMO_COUNSELOR_ACCOUNT_ID,
+  DEMO_USER_ID,
+} from './data'
 import { isVipActive, uid } from './utils'
 
-const STORAGE_KEY = 'guanxin_app_state_v3'
+const STORAGE_KEY = 'guanxin_app_state_v4'
+const LEGACY_STORAGE_KEY = 'guanxin_app_state_v3'
 
 type ToastKind = 'success' | 'error' | 'info'
 interface ToastItem {
@@ -29,6 +40,7 @@ interface ToastItem {
 interface ActionResult {
   ok: boolean
   message?: string
+  liveId?: string
 }
 
 interface CreatePostInput {
@@ -39,9 +51,34 @@ interface CreatePostInput {
   visibleTo: string[]
 }
 
+interface CounselorApplicationInput {
+  name: string
+  phone: string
+  password: string
+  gender: '女' | '男'
+  region: Region
+  years: number
+  institution: string
+  specialties: string[]
+  bio: string
+  certificateType: string
+  licenseNumber: string
+  issuingAuthority: string
+  certificateImage: string
+}
+
+interface StartLiveInput {
+  title: string
+  description: string
+  tags: string[]
+  art: string
+}
+
 interface StoreValue {
   state: AppState
   currentUser: User | null
+  currentCounselorAccount: CounselorAccount | null
+  currentCounselorProfile: Counselor | null
   toast: ToastItem | null
   showToast: (message: string, kind?: ToastKind) => void
   dismissToast: () => void
@@ -73,6 +110,18 @@ interface StoreValue {
   createRoom: (data: { title: string; topic: string; tag: string }) => string
   sendRoomMessage: (roomId: string, content: string) => void
   receiveRoomMessage: (roomId: string, content: string) => void
+  loginCounselor: (account: string, password: string) => ActionResult
+  loginDemoCounselor: (id?: string) => void
+  registerCounselor: (data: CounselorApplicationInput) => ActionResult
+  approveCounselorDemo: () => ActionResult
+  logoutCounselor: () => void
+  createCounselorPost: (content: string, images: string[]) => void
+  startCounselorLive: (data: StartLiveInput) => ActionResult
+  endCounselorLive: (liveId: string) => void
+  sendCounselorLiveMessage: (liveId: string, content: string) => void
+  sendCounselorChatMessage: (chatId: string, content: string) => void
+  receiveCounselorClientMessage: (chatId: string, content: string) => void
+  markCounselorChatRead: (chatId: string) => void
   resetDemo: () => void
 }
 
@@ -80,10 +129,29 @@ const StoreContext = createContext<StoreValue | null>(null)
 
 function loadState(): AppState {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY)
+    const raw = localStorage.getItem(STORAGE_KEY) ?? localStorage.getItem(LEGACY_STORAGE_KEY)
     if (!raw) return createInitialState()
     const parsed = JSON.parse(raw) as AppState
-    if (!parsed || parsed.version !== 3 || !Array.isArray(parsed.users)) return createInitialState()
+    if (!parsed || !Array.isArray(parsed.users)) return createInitialState()
+
+    if (parsed.version === 3) {
+      return {
+        ...parsed,
+        version: 4,
+        currentCounselorId: null,
+        counselorAccounts: COUNSELOR_ACCOUNTS,
+        counselorChats: COUNSELOR_CHATS,
+      }
+    }
+
+    if (
+      parsed.version !== 4 ||
+      !Array.isArray(parsed.counselorAccounts) ||
+      !Array.isArray(parsed.counselorChats)
+    ) {
+      return createInitialState()
+    }
+
     return parsed
   } catch {
     return createInitialState()
@@ -112,6 +180,16 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const currentUser = useMemo(
     () => state.users.find((u) => u.id === state.currentUserId) ?? null,
     [state.users, state.currentUserId],
+  )
+
+  const currentCounselorAccount = useMemo(
+    () => state.counselorAccounts.find((c) => c.id === state.currentCounselorId) ?? null,
+    [state.counselorAccounts, state.currentCounselorId],
+  )
+
+  const currentCounselorProfile = useMemo(
+    () => state.counselors.find((c) => c.id === currentCounselorAccount?.counselorId) ?? null,
+    [state.counselors, currentCounselorAccount?.counselorId],
   )
 
   const showToast = useCallback((message: string, kind: ToastKind = 'success') => {
@@ -493,6 +571,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
         id: uid('booking'),
         createdAt: new Date().toISOString(),
         status: 'upcoming',
+        clientName: currentUser.nickname,
+        clientAvatar: currentUser.avatar,
       }
       setState((prev) => ({ ...prev, bookings: [newBooking, ...prev.bookings] }))
       if (booking.usedVoucher) {
@@ -635,8 +715,325 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     }))
   }, [])
 
+  const loginCounselor = useCallback(
+    (account: string, password: string): ActionResult => {
+      const key = account.trim()
+      const found = state.counselorAccounts.find((c) => c.phone === key || c.name === key)
+      if (!found) return { ok: false, message: '没有找到这个咨询师账号' }
+      if (found.password !== password) return { ok: false, message: '密码不正确，请再试一次' }
+      setState((prev) => ({ ...prev, currentCounselorId: found.id }))
+      return { ok: true }
+    },
+    [state.counselorAccounts],
+  )
+
+  const loginDemoCounselor = useCallback((id = DEMO_COUNSELOR_ACCOUNT_ID) => {
+    setState((prev) => ({ ...prev, currentCounselorId: id }))
+  }, [])
+
+  const registerCounselor = useCallback(
+    (data: CounselorApplicationInput): ActionResult => {
+      if (!data.name.trim()) return { ok: false, message: '请填写真实姓名' }
+      if (!/^1\d{10}$/.test(data.phone)) return { ok: false, message: '请输入 11 位手机号' }
+      if (data.password.length < 6) return { ok: false, message: '密码至少需要 6 位' }
+      if (state.counselorAccounts.some((c) => c.phone === data.phone)) {
+        return { ok: false, message: '这个手机号已经提交过咨询师账号' }
+      }
+      if (!data.certificateType.trim()) return { ok: false, message: '请选择证件类型' }
+      if (!data.licenseNumber.trim()) return { ok: false, message: '请填写证件编号' }
+      if (!data.issuingAuthority.trim()) return { ok: false, message: '请填写发证机构' }
+      if (!data.certificateImage) return { ok: false, message: '请上传咨询师证件照片' }
+      if (data.specialties.length === 0) return { ok: false, message: '请至少选择一个擅长方向' }
+
+      const accountId = uid('ca')
+      const account: CounselorAccount = {
+        id: accountId,
+        counselorId: uid('c'),
+        phone: data.phone,
+        password: data.password,
+        name: data.name.trim(),
+        gender: data.gender,
+        avatar: data.gender === '女' ? 'me3' : 'me2',
+        title: data.certificateType,
+        bio: data.bio.trim() || '愿意用专业和耐心，陪你走过这一段。',
+        region: data.region,
+        years: data.years,
+        institution: data.institution.trim() || '独立执业',
+        specialties: data.specialties,
+        status: 'pending',
+        credential: {
+          certificateType: data.certificateType,
+          licenseNumber: data.licenseNumber.trim(),
+          issuingAuthority: data.issuingAuthority.trim(),
+          certificateImage: data.certificateImage,
+          submittedAt: new Date().toISOString(),
+        },
+        createdAt: new Date().toISOString(),
+      }
+      setState((prev) => ({
+        ...prev,
+        counselorAccounts: [...prev.counselorAccounts, account],
+        currentCounselorId: account.id,
+      }))
+      return { ok: true }
+    },
+    [state.counselorAccounts],
+  )
+
+  const approveCounselorDemo = useCallback((): ActionResult => {
+    if (!currentCounselorAccount) return { ok: false, message: '请先登录咨询师账号' }
+    if (currentCounselorAccount.status === 'approved') return { ok: true }
+    const account = currentCounselorAccount
+    const institution =
+      state.institutions.find((i) => i.name === account.institution) ??
+      state.institutions.find((i) => i.city === account.region.city) ??
+      state.institutions[0]
+    const publicProfile: Counselor = {
+      id: account.counselorId,
+      name: account.name,
+      avatar: account.avatar,
+      gender: account.gender,
+      age: 32,
+      title: account.title,
+      years: account.years,
+      city: account.region.city,
+      district: account.region.district,
+      institutionId: institution?.id ?? 'inst_zhiyu',
+      specialties: account.specialties,
+      tags: ['新入驻', account.credential.certificateType],
+      price: 299,
+      rating: 5.0,
+      sessions: 0,
+      followers: 0,
+      intro: account.bio,
+      quote: '愿每一次倾听，都让你更靠近自己。',
+      style: '温柔倾听',
+      online: true,
+      formats: ['video', 'voice', 'inperson'],
+      review: { author: '观心平台', content: '资质材料已通过平台审核。', rating: 5 },
+    }
+    setState((prev) => ({
+      ...prev,
+      counselorAccounts: prev.counselorAccounts.map((c) =>
+        c.id === account.id ? { ...c, status: 'approved' } : c,
+      ),
+      counselors: prev.counselors.some((c) => c.id === publicProfile.id)
+        ? prev.counselors
+        : [...prev.counselors, publicProfile],
+      institutions: institution
+        ? prev.institutions.map((i) =>
+            i.id === institution.id && !i.counselorIds.includes(publicProfile.id)
+              ? { ...i, counselorIds: [...i.counselorIds, publicProfile.id] }
+              : i,
+          )
+        : prev.institutions,
+    }))
+    showToast('认证审核已通过，咨询师工作台已解锁')
+    return { ok: true }
+  }, [currentCounselorAccount, showToast, state.institutions])
+
+  const logoutCounselor = useCallback(() => {
+    setState((prev) => ({ ...prev, currentCounselorId: null }))
+  }, [])
+
+  const createCounselorPost = useCallback(
+    (content: string, images: string[]) => {
+      if (!currentCounselorAccount || !content.trim()) return
+      const profile = state.counselors.find((c) => c.id === currentCounselorAccount.counselorId)
+      const post: Post = {
+        id: uid('post'),
+        authorId: currentCounselorAccount.counselorId,
+        authorType: 'counselor',
+        authorName: currentCounselorAccount.name,
+        authorAvatar: currentCounselorAccount.avatar,
+        authorTag: '认证心理咨询师',
+        content: content.trim(),
+        images,
+        visibility: 'public',
+        visibleTo: [],
+        createdAt: new Date().toISOString(),
+        likes: 0,
+        likedBy: [],
+        comments: [],
+      }
+      setState((prev) => ({ ...prev, posts: [post, ...prev.posts] }))
+      if (profile) {
+        setState((prev) => ({
+          ...prev,
+          counselors: prev.counselors.map((c) => (c.id === profile.id ? { ...c, online: true } : c)),
+        }))
+      }
+    },
+    [currentCounselorAccount, state.counselors],
+  )
+
+  const startCounselorLive = useCallback(
+    (data: StartLiveInput): ActionResult => {
+      if (!currentCounselorAccount) return { ok: false, message: '请先登录咨询师账号' }
+      if (currentCounselorAccount.status !== 'approved') {
+        return { ok: false, message: '资质审核通过后才能开播' }
+      }
+      const account = currentCounselorAccount
+      const existing = state.lives.find(
+        (l) => l.hostId === account.counselorId && l.status === 'live',
+      )
+      if (existing) {
+        return { ok: true, liveId: existing.id, message: '你已有一场直播正在进行' }
+      }
+      const profile = state.counselors.find((c) => c.id === account.counselorId)
+      const id = uid('live')
+      const live: (typeof state.lives)[number] = {
+        id,
+        title: data.title.trim() || '和你聊聊最近的心里事',
+        hostId: account.counselorId,
+        hostName: account.name,
+        hostAvatar: account.avatar,
+        hostTitle: profile?.title ?? account.title,
+        status: 'live',
+        viewers: 3,
+        startsAt: new Date().toISOString(),
+        tags: data.tags.length ? data.tags : ['心理陪伴', '免费'],
+        description: data.description.trim() || '一场轻松的直播，聊聊最近的心情与困惑。',
+        art: data.art || 'live_sage',
+        chat: [
+          {
+            id: uid('lc'),
+            sender: 'system',
+            content: '直播已开始。请遵守咨询伦理，不公开讨论可识别来访者身份的信息。',
+            createdAt: new Date().toISOString(),
+          },
+          {
+            id: uid('lc'),
+            sender: 'other',
+            name: '南栀',
+            avatar: 'nanzhi',
+            content: '老师晚上好，来啦，今天想听听怎么和焦虑相处。',
+            createdAt: new Date().toISOString(),
+          },
+          {
+            id: uid('lc'),
+            sender: 'other',
+            name: '阿梨',
+            avatar: 'ali',
+            content: '刚好下班，进来坐一会儿。',
+            createdAt: new Date().toISOString(),
+          },
+        ],
+      }
+      setState((prev) => ({
+        ...prev,
+        lives: [live, ...prev.lives],
+        counselors: prev.counselors.map((c) =>
+          c.id === account.counselorId ? { ...c, online: true } : c,
+        ),
+      }))
+      return { ok: true, liveId: id }
+    },
+    [currentCounselorAccount, state.counselors, state.lives],
+  )
+
+  const endCounselorLive = useCallback(
+    (liveId: string) => {
+      if (!currentCounselorAccount) return
+      setState((prev) => ({
+        ...prev,
+        lives: prev.lives.filter(
+          (l) => !(l.id === liveId && l.hostId === currentCounselorAccount.counselorId),
+        ),
+      }))
+    },
+    [currentCounselorAccount],
+  )
+
+  const sendCounselorLiveMessage = useCallback(
+    (liveId: string, content: string) => {
+      if (!currentCounselorAccount || !content.trim()) return
+      const message: ChatMessage = {
+        id: uid('lc'),
+        sender: 'other',
+        name: currentCounselorAccount.name,
+        avatar: currentCounselorAccount.avatar,
+        content: content.trim(),
+        createdAt: new Date().toISOString(),
+      }
+      setState((prev) => ({
+        ...prev,
+        lives: prev.lives.map((live) =>
+          live.id === liveId ? { ...live, chat: [...live.chat, message] } : live,
+        ),
+      }))
+    },
+    [currentCounselorAccount],
+  )
+
+  const sendCounselorChatMessage = useCallback(
+    (chatId: string, content: string) => {
+      if (!currentCounselorAccount || !content.trim()) return
+      setState((prev) => ({
+        ...prev,
+        counselorChats: prev.counselorChats.map((chat) =>
+          chat.id === chatId && chat.counselorId === currentCounselorAccount.counselorId
+            ? {
+                ...chat,
+                messages: [
+                  ...chat.messages,
+                  {
+                    id: uid('cm'),
+                    sender: 'counselor',
+                    content: content.trim(),
+                    createdAt: new Date().toISOString(),
+                  },
+                ],
+                updatedAt: new Date().toISOString(),
+                unread: 0,
+              }
+            : chat,
+        ),
+      }))
+    },
+    [currentCounselorAccount],
+  )
+
+  const receiveCounselorClientMessage = useCallback(
+    (chatId: string, content: string) => {
+      if (!currentCounselorAccount || !content.trim()) return
+      setState((prev) => ({
+        ...prev,
+        counselorChats: prev.counselorChats.map((chat) =>
+          chat.id === chatId && chat.counselorId === currentCounselorAccount.counselorId
+            ? {
+                ...chat,
+                messages: [
+                  ...chat.messages,
+                  {
+                    id: uid('cm'),
+                    sender: 'client',
+                    content: content.trim(),
+                    createdAt: new Date().toISOString(),
+                  },
+                ],
+                updatedAt: new Date().toISOString(),
+                unread: chat.unread + 1,
+              }
+            : chat,
+        ),
+      }))
+    },
+    [currentCounselorAccount],
+  )
+
+  const markCounselorChatRead = useCallback((chatId: string) => {
+    setState((prev) => ({
+      ...prev,
+      counselorChats: prev.counselorChats.map((chat) =>
+        chat.id === chatId ? { ...chat, unread: 0 } : chat,
+      ),
+    }))
+  }, [])
+
   const resetDemo = useCallback(() => {
     localStorage.removeItem(STORAGE_KEY)
+    localStorage.removeItem(LEGACY_STORAGE_KEY)
     setState(createInitialState())
     showToast('演示数据已重置', 'info')
   }, [showToast])
@@ -644,6 +1041,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
   const value: StoreValue = {
     state,
     currentUser,
+    currentCounselorAccount,
+    currentCounselorProfile,
     toast,
     showToast,
     dismissToast,
@@ -675,6 +1074,18 @@ export function StoreProvider({ children }: { children: ReactNode }) {
     createRoom,
     sendRoomMessage,
     receiveRoomMessage,
+    loginCounselor,
+    loginDemoCounselor,
+    registerCounselor,
+    approveCounselorDemo,
+    logoutCounselor,
+    createCounselorPost,
+    startCounselorLive,
+    endCounselorLive,
+    sendCounselorLiveMessage,
+    sendCounselorChatMessage,
+    receiveCounselorClientMessage,
+    markCounselorChatRead,
     resetDemo,
   }
 

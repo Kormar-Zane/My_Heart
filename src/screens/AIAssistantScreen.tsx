@@ -290,7 +290,7 @@ export function AIAssistantScreen() {
               <Sparkles size={22} />
             </div>
             <strong>正在认真理解你说的话…</strong>
-            <p>在 8 位咨询师中，寻找和你此刻更贴近的人</p>
+            <p>在 {state.counselors.length} 位咨询师中，寻找和你此刻更贴近的人</p>
             <div className="matching-lines">
               <span className="is-done">
                 <Check size={12} /> 已整理你的感受

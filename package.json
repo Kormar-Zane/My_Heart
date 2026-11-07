@@ -1,7 +1,7 @@
 {
   "name": "guanxin-my-heart",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "观心 - 温暖的心理陪伴与情绪解压空间",
   "type": "module",
   "scripts": {

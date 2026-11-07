@@ -1,7 +1,7 @@
 {
   "name": "观心 · 看见情绪，也看见自己",
   "short_name": "观心",
-  "description": "一个温暖的心理陪伴与情绪解压空间。心理咨询、免费直播、解压游戏与日常分享。",
+  "description": "一个温暖的心理陪伴与情绪解压空间，包含用户端与咨询师专用端。心理咨询、免费直播、解压游戏与日常分享。",
   "lang": "zh-CN",
   "start_url": "./",
   "scope": "./",
@@ -10,6 +10,14 @@
   "background_color": "#f7f3eb",
   "theme_color": "#24483f",
   "categories": ["health", "lifestyle", "social"],
+  "shortcuts": [
+    {
+      "name": "咨询师专用端",
+      "short_name": "咨询师端",
+      "description": "咨询师登录、资质认证与工作台",
+      "url": "./#counselor"
+    }
+  ],
   "icons": [
     {
       "src": "favicon.svg",

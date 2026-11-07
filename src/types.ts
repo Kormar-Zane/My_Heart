@@ -3,6 +3,7 @@ export type VipTier = 'none' | 'week' | 'month' | 'year'
 export type Visibility = 'public' | 'friends' | 'partial' | 'private'
 export type SessionFormat = 'video' | 'voice' | 'inperson'
 export type GameType = 'draw' | 'turtle' | 'idiom' | 'song' | 'karaoke'
+export type CounselorVerificationStatus = 'pending' | 'approved' | 'rejected'
 
 export interface Region {
   province: string
@@ -56,7 +57,55 @@ export interface Counselor {
   style: string
   online: boolean
   formats: SessionFormat[]
+  followers?: number
   review: { author: string; content: string; rating: number }
+}
+
+export interface CounselorCredential {
+  certificateType: string
+  licenseNumber: string
+  issuingAuthority: string
+  certificateImage: string
+  submittedAt: string
+}
+
+export interface CounselorAccount {
+  id: string
+  counselorId: string
+  phone: string
+  password: string
+  name: string
+  gender: '女' | '男'
+  avatar: string
+  title: string
+  bio: string
+  region: Region
+  years: number
+  institution: string
+  specialties: string[]
+  status: CounselorVerificationStatus
+  credential: CounselorCredential
+  createdAt: string
+}
+
+export interface CounselorChatMessage {
+  id: string
+  sender: 'counselor' | 'client'
+  content: string
+  createdAt: string
+}
+
+export interface CounselorChat {
+  id: string
+  counselorId: string
+  clientId?: string
+  clientName: string
+  clientAvatar: string
+  clientTag: string
+  online: boolean
+  unread: number
+  updatedAt: string
+  messages: CounselorChatMessage[]
 }
 
 export interface Institution {
@@ -175,6 +224,8 @@ export interface Booking {
   status: 'upcoming' | 'completed' | 'cancelled'
   createdAt: string
   usedVoucher: boolean
+  clientName?: string
+  clientAvatar?: string
 }
 
 export interface GameRecord {
@@ -210,8 +261,11 @@ export interface ShopItem {
 export interface AppState {
   version: number
   currentUserId: string | null
+  currentCounselorId: string | null
   users: User[]
   counselors: Counselor[]
+  counselorAccounts: CounselorAccount[]
+  counselorChats: CounselorChat[]
   institutions: Institution[]
   posts: Post[]
   conversations: Conversation[]

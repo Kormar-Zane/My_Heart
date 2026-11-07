@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Eye, EyeOff, LockKeyhole, Phone, Sparkles, UserRound } from 'lucide-react'
+import { ArrowRight, BadgeCheck, Eye, EyeOff, LockKeyhole, Phone, Sparkles, UserRound } from 'lucide-react'
 import { useStore } from '../store'
 import { BrandMark } from '../components/BrandMark'
 import { Button } from '../components/UI'
@@ -7,7 +7,7 @@ import { cn } from '../utils'
 
 type Mode = 'login' | 'register'
 
-export function AuthScreen() {
+export function AuthScreen({ onOpenCounselor }: { onOpenCounselor?: () => void }) {
   const { login, register, loginDemo, showToast } = useStore()
   const [mode, setMode] = useState<Mode>('login')
   const [showPassword, setShowPassword] = useState(false)
@@ -286,6 +286,19 @@ export function AuthScreen() {
           <button className="auth-demo-hint" onClick={fillDemo}>
             体验账号 13800000000 / 密码 123456
           </button>
+
+          {onOpenCounselor && (
+            <button className="auth-role-switch" onClick={onOpenCounselor}>
+              <span className="auth-role-icon">
+                <BadgeCheck size={17} />
+              </span>
+              <span>
+                <strong>我是认证心理咨询师</strong>
+                <small>进入咨询师专用端</small>
+              </span>
+              <ArrowRight size={16} />
+            </button>
+          )}
 
           <p className="auth-legal">
             继续即表示你同意《用户协议》与《隐私说明》。测试阶段账号与内容仅保存在本机。
