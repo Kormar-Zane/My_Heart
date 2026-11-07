@@ -6,6 +6,7 @@ import { Avatar } from '../components/Avatar'
 import { RegionSheet, Tag, TopBar } from '../components/UI'
 import type { Counselor } from '../types'
 import { clamp, cn, regionLabel } from '../utils'
+import { serverApi } from '../api'
 
 interface AiMessage {
   id: string
@@ -151,7 +152,11 @@ export function AIAssistantScreen() {
   const [typing, setTyping] = useState(false)
   const [phase, setPhase] = useState<'chat' | 'matching' | 'results'>('chat')
   const [regionOpen, setRegionOpen] = useState(false)
+  const [aiRecommendations, setAiRecommendations] = useState<Recommendation[] | null>(null)
+  const [aiSummary, setAiSummary] = useState('')
+  const [aiSource, setAiSource] = useState<'ai' | 'local'>('local')
   const timers = useRef<number[]>([])
+  const matchRequest = useRef(0)
   const chatEnd = useRef<HTMLDivElement>(null)
   const resultsRef = useRef<HTMLDivElement>(null)
 
@@ -178,17 +183,58 @@ export function AIAssistantScreen() {
     return () => window.clearTimeout(timer)
   }, [phase])
 
-  const recommendations = useMemo(() => {
+  const localRecommendations = useMemo(() => {
     return state.counselors
       .map((c) => scoreCounselor(c, answers, currentUser?.region.city ?? ''))
       .sort((a, b) => b.score - a.score)
       .slice(0, 3)
   }, [answers, currentUser?.region.city, state.counselors])
 
+  const recommendations = aiRecommendations ?? localRecommendations
+
+  const runAiMatch = async (finalAnswers: Record<string, string>) => {
+    const requestId = ++matchRequest.current
+    const city = currentUser?.region.city ?? ''
+    const fallback = state.counselors
+      .map((c) => scoreCounselor(c, finalAnswers, city))
+      .sort((a, b) => b.score - a.score)
+    try {
+      const data = await serverApi.aiMatch(finalAnswers, city)
+      if (requestId !== matchRequest.current) return
+      const mapped: Recommendation[] = []
+      for (const item of data.recommendations) {
+        const counselor = state.counselors.find((c) => c.id === item.counselorId)
+        if (!counselor) continue
+        const reasons = item.reasons.filter(Boolean).slice(0, 3)
+        mapped.push({
+          counselor,
+          score: item.score,
+          reasons: reasons.length > 0 ? reasons : [`专注${counselor.specialties[0]}，与你此刻的困扰贴近`],
+        })
+        if (mapped.length >= 3) break
+      }
+      for (const item of fallback) {
+        if (mapped.length >= 3) break
+        if (!mapped.some((m) => m.counselor.id === item.counselor.id)) mapped.push(item)
+      }
+      setAiRecommendations(mapped)
+      setAiSummary(data.summary)
+      setAiSource('ai')
+    } catch {
+      if (requestId !== matchRequest.current) return
+      setAiRecommendations(null)
+      setAiSummary('')
+      setAiSource('local')
+    } finally {
+      if (requestId === matchRequest.current) setPhase('results')
+    }
+  }
+
   const choose = (option: string) => {
     if (typing || phase !== 'chat') return
     const question = QUESTIONS[step]
-    setAnswers((prev) => ({ ...prev, [question.id]: option }))
+    const finalAnswers = { ...answers, [question.id]: option }
+    setAnswers(finalAnswers)
     setMessages((prev) => [...prev, { id: `me-${Date.now()}`, role: 'me', text: option }])
     setTyping(true)
 
@@ -196,7 +242,9 @@ export function AIAssistantScreen() {
       schedule(() => {
         setTyping(false)
         setPhase('matching')
-        schedule(() => setPhase('results'), 2100)
+        setAiSummary('')
+        setAiRecommendations(null)
+        void runAiMatch(finalAnswers)
       }, 800)
     } else {
       schedule(() => {
@@ -212,6 +260,7 @@ export function AIAssistantScreen() {
 
   const restart = () => {
     timers.current.forEach((t) => window.clearTimeout(t))
+    matchRequest.current += 1
     setMessages([
       {
         id: 'ai-welcome-again',
@@ -224,6 +273,9 @@ export function AIAssistantScreen() {
     setStep(0)
     setTyping(false)
     setPhase('chat')
+    setAiRecommendations(null)
+    setAiSummary('')
+    setAiSource('local')
   }
 
   const currentQuestion = QUESTIONS[step]
@@ -298,7 +350,7 @@ export function AIAssistantScreen() {
               <span className="is-active">
                 <span className="tiny-spinner" /> 正在匹配擅长方向
               </span>
-              <span>结合地区与预算</span>
+              <span>结合地区、预算与真实咨询师资料</span>
             </div>
           </div>
         )}
@@ -310,10 +362,19 @@ export function AIAssistantScreen() {
                 <Sparkles size={13} />
                 为此刻的你
               </span>
+              <span className={cn('ai-source-badge', aiSource === 'ai' ? 'is-ai' : 'is-local')}>
+                {aiSource === 'ai' ? 'AI 实时分析' : '本地规则匹配'}
+              </span>
               <h2>这 3 位，可能更懂你</h2>
+              {aiSummary && <p className="ai-summary">{aiSummary}</p>}
               <p>
                 基于你提到的「{answers.concern}」，以及偏好「{answers.style}」。最终选择谁，完全由你决定。
               </p>
+              {aiSource === 'local' && (
+                <p className="ai-source-note">
+                  实时 AI 服务暂不可用，本次使用本地规则匹配；你仍可以正常查看与预约咨询师。
+                </p>
+              )}
             </div>
 
             {recommendations.map(({ counselor, score, reasons }, index) => (
@@ -385,6 +446,7 @@ export function AIAssistantScreen() {
             <p className="ai-disclaimer">
               <ShieldCheck size={13} />
               AI 建议仅作为参考，不构成诊断或治疗意见。你可以自由选择是否预约。
+              {aiSource === 'ai' && ' 本次推荐由服务端调用大模型生成；发送内容仅包含你的选项、城市与咨询师公开资料，不包含手机号或密码。'}
             </p>
           </div>
         )}

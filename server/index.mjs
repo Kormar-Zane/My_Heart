@@ -589,6 +589,119 @@ app.patch('/api/me', requireAuth('user'), (req, res) => {
   res.json({ ok: true, user: publicUser(userRow(row.id), true) })
 })
 
+app.post('/api/ai/match', requireAuth('user'), async (req, res) => {
+  const apiKey = process.env.AI_API_KEY
+  if (!apiKey) {
+    return res.status(503).json({ error: 'AI 服务尚未配置：请在服务端 .env 设置 AI_API_KEY' })
+  }
+  const answers = req.body?.answers
+  if (!answers || typeof answers !== 'object') {
+    return res.status(400).json({ error: '缺少匹配答案' })
+  }
+  const counselors = db
+    .prepare('SELECT * FROM counselors ORDER BY rating DESC')
+    .all()
+    .map((c) => ({
+      id: c.id,
+      name: c.name,
+      title: c.title,
+      years: c.years,
+      city: c.city,
+      district: c.district,
+      specialties: parseJson(c.specialties, []),
+      tags: parseJson(c.tags, []),
+      style: c.style,
+      price: c.price,
+      rating: c.rating,
+      intro: c.intro,
+      formats: parseJson(c.formats, []),
+    }))
+  const baseUrl = (process.env.AI_BASE_URL || 'https://api.deepseek.com').replace(/\/+$/, '')
+  const model = process.env.AI_MODEL || 'deepseek-chat'
+  const systemPrompt = [
+    '你是「观心」心理陪伴应用的专业咨询师匹配助手。',
+    '你只能从候选咨询师中选择，不得编造不存在的咨询师 id。',
+    '不要做医学诊断，不要承诺疗效，不要推荐药物。',
+    '根据用户的困扰、持续时间、陪伴偏好、预算和咨询方式，选择最合适的 3 位咨询师。',
+    '专业方向优先：必须先看 specialties 与用户困扰是否直接相关；不要因为同城、价格低或风格温和，就选择明显不对口的专科方向（例如把儿童游戏治疗师推荐给成人焦虑）。',
+    '若直接相关的人选不足 3 位，才逐步放宽到可迁移的相近方向，并在理由中说明。',
+    '只返回一个 JSON 对象，不要使用 Markdown 代码围栏。',
+    'JSON 格式：{"summary":"不超过80字的整体建议","recommendations":[{"id":"咨询师id","score":92,"reasons":["具体理由1","具体理由2"]}]}',
+    'score 为 70 到 98 的整数；reasons 每条不超过 32 字，必须结合用户回答与咨询师资料。',
+  ].join('\n')
+  const userPrompt = [
+    `用户回答：${JSON.stringify(answers)}`,
+    `用户所在城市：${req.body?.city || '未知'}`,
+    `候选咨询师：${JSON.stringify(counselors)}`,
+    '请严格返回 3 位咨询师，并优先考虑擅长方向、沟通风格、预算和地区是否匹配。',
+  ].join('\n\n')
+
+  let response
+  try {
+    response = await fetch(`${baseUrl}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model,
+        temperature: 0.35,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt },
+        ],
+        response_format: { type: 'json_object' },
+      }),
+      signal: AbortSignal.timeout(45_000),
+    })
+  } catch (error) {
+    console.error('[ai] request failed', error?.message || error)
+    return res.status(502).json({ error: 'AI 服务连接失败，请稍后再试' })
+  }
+  if (!response.ok) {
+    const detail = await response.text().catch(() => '')
+    console.error('[ai] provider status', response.status, detail.slice(0, 300))
+    return res.status(502).json({ error: `AI 服务返回错误（${response.status}）` })
+  }
+  let payload
+  try {
+    payload = await response.json()
+  } catch {
+    return res.status(502).json({ error: 'AI 服务返回内容无法解析' })
+  }
+  const raw = payload?.choices?.[0]?.message?.content
+  if (!raw) return res.status(502).json({ error: 'AI 服务没有返回内容' })
+  let result
+  try {
+    result = JSON.parse(String(raw).replace(/^```json\s*/i, '').replace(/```$/i, '').trim())
+  } catch {
+    return res.status(502).json({ error: 'AI 返回的匹配结果格式不正确' })
+  }
+  const validIds = new Set(counselors.map((c) => c.id))
+  const recommendations = Array.isArray(result?.recommendations)
+    ? result.recommendations
+        .filter((item) => item && validIds.has(item.id))
+        .slice(0, 3)
+        .map((item) => ({
+          counselorId: item.id,
+          score: Math.max(70, Math.min(98, Number(item.score) || 80)),
+          reasons: Array.isArray(item.reasons)
+            ? item.reasons.filter((r) => typeof r === 'string').slice(0, 3)
+            : [],
+        }))
+    : []
+  if (recommendations.length === 0) {
+    return res.status(502).json({ error: 'AI 未能给出有效的咨询师推荐' })
+  }
+  res.json({
+    ok: true,
+    summary: typeof result.summary === 'string' ? result.summary.slice(0, 160) : '',
+    recommendations,
+    model,
+  })
+})
+
 app.post('/api/me/vip', requireAuth('user'), (req, res) => {
   const tier = String(req.body?.tier ?? '')
   if (!['week', 'month', 'year'].includes(tier)) {

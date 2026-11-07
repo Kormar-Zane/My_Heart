@@ -74,6 +74,17 @@ export const serverApi = {
       body: JSON.stringify(patch),
     })
   },
+  async aiMatch(answers: Record<string, string>, city: string) {
+    return apiFetch<{
+      ok: boolean
+      summary: string
+      recommendations: Array<{ counselorId: string; score: number; reasons: string[] }>
+      model: string
+    }>('/api/ai/match', {
+      method: 'POST',
+      body: JSON.stringify({ answers, city }),
+    })
+  },
   async purchaseVip(tier: 'week' | 'month' | 'year') {
     return apiFetch<{ ok: boolean; user: User }>('/api/me/vip', {
       method: 'POST',
