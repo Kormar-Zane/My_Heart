@@ -258,7 +258,7 @@ export function CounselorMeScreen({ onPublish, onExit }: { onPublish: () => void
         </section>
 
         <div className="ca-me-footer">
-          <span>观心咨询师端 · 内测 v1.1</span>
+          <span>观心咨询师端 · 内测 v1.2</span>
           <span>
             <Star size={11} fill="currentColor" />
             专业、保密、有边界

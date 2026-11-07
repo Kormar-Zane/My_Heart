@@ -146,9 +146,9 @@ export function SettingsScreen() {
 
       <section className="settings-group">
         <h2>关于</h2>
-        <button className="settings-link" onClick={() => showToast('观心用户端 v1.1 · 内测版本', 'info')}>
+        <button className="settings-link" onClick={() => showToast('观心用户端 v1.2 · 内测版本', 'info')}>
           <span>版本信息</span>
-          <span className="settings-version">v1.1.0 内测</span>
+          <span className="settings-version">v1.2.0 内测</span>
         </button>
         <button className="settings-link" onClick={() => showToast('用户协议为演示占位内容', 'info')}>
           <span>用户协议</span>
